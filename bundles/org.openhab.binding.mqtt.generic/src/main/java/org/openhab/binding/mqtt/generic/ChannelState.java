@@ -51,13 +51,13 @@ public class ChannelState implements MqttMessageSubscriber {
 
     // Immutable channel configuration
     protected final boolean readOnly;
-    protected final ChannelUID channelUID;
     protected final ChannelConfig config;
 
     /** Channel value **/
     protected final Value cachedValue;
 
     // Runtime variables
+    protected ChannelUID channelUID;
     private @Nullable MqttBrokerConnection connection;
     protected final ChannelTransformation incomingTransformation;
     protected final ChannelTransformation outgoingTransformation;
@@ -78,13 +78,35 @@ public class ChannelState implements MqttMessageSubscriber {
      */
     public ChannelState(ChannelConfig config, ChannelUID channelUID, Value cachedValue,
             @Nullable ChannelStateUpdateListener channelStateUpdateListener) {
+        this(config, channelUID, cachedValue, channelStateUpdateListener,
+                new ChannelTransformation(config.transformationPattern),
+                new ChannelTransformation(config.transformationPatternOut));
+    }
+
+    /**
+     * Creates a new channel state.
+     *
+     * @param config The channel configuration
+     * @param channelUID The channelUID is used for the {@link ChannelStateUpdateListener} to notify about value changes
+     * @param cachedValue MQTT only notifies us once about a value, during the subscribe. The channel state therefore
+     *            needs a cache for the current value.
+     * @param channelStateUpdateListener A channel state update listener
+     * @param incomingTransformation A transformation to apply to incoming values
+     * @param outgoingTransformation A transformation to apply to outgoing values
+     */
+    public ChannelState(ChannelConfig config, ChannelUID channelUID, Value cachedValue,
+            @Nullable ChannelStateUpdateListener channelStateUpdateListener,
+            @Nullable ChannelTransformation incomingTransformation,
+            @Nullable ChannelTransformation outgoingTransformation) {
         this.config = config;
         this.channelStateUpdateListener = channelStateUpdateListener;
         this.channelUID = channelUID;
         this.cachedValue = cachedValue;
         this.readOnly = config.commandTopic.isBlank();
-        this.incomingTransformation = new ChannelTransformation(config.transformationPattern);
-        this.outgoingTransformation = new ChannelTransformation(config.transformationPatternOut);
+        this.incomingTransformation = incomingTransformation == null ? new ChannelTransformation((String) null)
+                : incomingTransformation;
+        this.outgoingTransformation = outgoingTransformation == null ? new ChannelTransformation((String) null)
+                : outgoingTransformation;
     }
 
     public boolean isReadOnly() {
@@ -108,6 +130,11 @@ public class ChannelState implements MqttMessageSubscriber {
      */
     public ChannelUID channelUID() {
         return channelUID;
+    }
+
+    // If the UID of the channel changed after it was initially created
+    public void setChannelUID(ChannelUID channelUID) {
+        this.channelUID = channelUID;
     }
 
     /**
@@ -342,7 +369,6 @@ public class ChannelState implements MqttMessageSubscriber {
             // Only pass numeric value for QuantityType.
             if (mqttCommandValue instanceof QuantityType<?> qtCommandValue) {
                 cValue = new DecimalType(qtCommandValue.toBigDecimal());
-
             }
             String commandString = mqttFormatter.getMQTTpublishValue(cValue, "%s");
             Optional<String> transformedValue = outgoingTransformation.apply(commandString);
